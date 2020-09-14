@@ -13,14 +13,21 @@ See https://pytest-invenio.readthedocs.io/ for documentation on which test
 fixtures are available.
 """
 
-from mock_module.resource import Resource
-from mock_module.service import Service
+import pytest
+from mock_module.resource import Resource, ResourceConfig
+from mock_module.service import Service, ServiceConfig
 
 
 @pytest.fixture(scope="module")
 def resource():
     """Resource."""
-    return Resource(service=Service())
+    # This should work but doesn't because the application context is checked
+    # to see if it's been overridden in the config.
+    # return Resource(service=Service())
+    return Resource(
+        config=ResourceConfig,
+        service=Service(config=ServiceConfig)
+    )
 
 
 @pytest.fixture(scope="module")
