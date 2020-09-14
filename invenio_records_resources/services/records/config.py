@@ -15,7 +15,6 @@ from invenio_pidstore.resolver import Resolver
 from invenio_records_permissions.policies.records import RecordPermissionPolicy
 from invenio_search import RecordsSearch
 
-from ...config import lt_es7
 from ...linker import DeleteLinkBuilder, FilesLinkBuilder, Linker, \
     SearchLinkBuilder, SelfLinkBuilder
 from ...records import Record

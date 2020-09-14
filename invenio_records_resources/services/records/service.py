@@ -22,20 +22,6 @@ class RecordService(Service):
 
     default_config = RecordServiceConfig
 
-    def __init__(self, config=None, *args, **kwargs):
-        """Constructor."""
-        super(RecordService, self).__init__(config=config)
-        # TODO: Move outside service?
-        # self.linker = Linker({
-        #     "record": [
-        #         lb(self.config) for lb in self.config.record_link_builders
-        #     ],
-        #     "record_search": [
-        #         lb(self.config) for lb in
-        #         self.config.record_search_link_builders
-        #     ]
-        # })
-
     #
     # Low-level API
     #
