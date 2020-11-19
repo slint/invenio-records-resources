@@ -60,7 +60,7 @@ from collections.abc import MutableMapping
 from functools import wraps
 
 from invenio_db import db
-from invenio_files_rest.models import Bucket, FileInstance, ObjectVersion
+from invenio_files_rest.models import Bucket, ObjectVersion
 from invenio_records.systemfields import SystemField
 
 
@@ -107,13 +107,16 @@ class Files(MutableMapping):
         return f
 
     @ensure_enabled
-    def create(self, key, stream, data):
+    def create(self, key, file_obj, data):
         """Create a file."""
         if key in self:
             raise Exception(f'File with key {key} already exists.')
 
         f = self._init(key, data)
-        obj = ObjectVersion.create(self.bucket, key, stream=stream)
+        if hasattr(file_obj, 'read'):
+            obj = ObjectVersion.create(self.bucket, key, stream=file_obj)
+        else:
+            obj = file_obj
         f.object_version_id = obj.version_id
         f.object_version = obj
         self._entries[key] = f
@@ -122,10 +125,12 @@ class Files(MutableMapping):
     @ensure_enabled
     def delete(self, key):
         """Delete a file."""
-        # TODO: implement
-        # f = self.entries[key]
-        # f.delete()
-        pass
+        rf = self[key]
+        ov = rf.object_version
+        rf.delete(force=True)
+        if ov:
+            ov.remove()
+        del self._entries[key]
 
     @property
     def entries(self):
@@ -157,8 +162,7 @@ class Files(MutableMapping):
         if value is False:
             self.default_preview = None
             self.order = []
-            # TODO: Delete or "empty" the bucket?
-            self.bucket.delete()
+            self.clear()
         self._enabled = value
 
     @property
@@ -212,27 +216,30 @@ class Files(MutableMapping):
         """
         if isinstance(value, (tuple, list)):
             assert len(value) == 2
-            stream, data = value
-            assert hasattr(stream, 'read')
+            file_obj, data = value
+            # TODO: Raise appropriate exceptions instead of asserting
+            assert isinstance(file_obj, ObjectVersion) or hasattr(file_obj, 'read')
             assert isinstance(data, dict)
         else:
-            if hasattr(value, 'read'):
-                stream, data = value, None
+            if isinstance(value, ObjectVersion) or hasattr(value, 'read'):
+                file_obj, data = value, None
             elif isinstance(value, dict):
-                stream, data = None, value
+                file_obj, data = None, value
             else:
                 raise Exception(f"Invalid set value: {value}.")
 
         old_value = self.get(key)
-        if stream:
+        if file_obj:
             if old_value:
-                obj = ObjectVersion.create(self.bucket, key, stream=stream)
-                old_value.object_version_id = obj.version_id
-                old_value.object_version = obj
+                if hasattr(file_obj, 'read'):
+                    file_obj = ObjectVersion.create(
+                        self.bucket, key, stream=file_obj)
+                old_value.object_version_id = file_obj.version_id
+                old_value.object_version = file_obj
                 if data:
                     old_value.metadata = data
             else:
-                self.create(key, stream, data)
+                self.create(key, file_obj, data)
         else:
             if old_value:
                 old_value.metadata = data
@@ -246,8 +253,9 @@ class Files(MutableMapping):
         # Unset the default preview if the file is removed
         if self.default_preview == key:
             self.default_preview = None
+        if key in self._order:
+            self._order.remove(key)
         self.delete(key)
-        del self.entries[key]
 
     # TODO: implement for efficiency?
     # @ensure_enabled
