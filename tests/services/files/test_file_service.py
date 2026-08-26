@@ -12,12 +12,14 @@ from flask_principal import Identity
 from invenio_access import any_user
 from invenio_access.permissions import system_identity
 from invenio_files_rest.errors import FileSizeError
+from invenio_files_rest.models import ObjectVersion
 from marshmallow import ValidationError
 
 from invenio_records_resources.services.errors import (
     FileKeyNotFoundError,
     PermissionDeniedError,
 )
+from tests.mock_module.api import RecordWithFiles
 from tests.mock_module.models import FileRecordMetadata
 
 #
@@ -834,3 +836,39 @@ def test_backward_compatibility(
     result = file_service.list_files(identity_simple, recid)
     assert result.entries
     assert len(list(result.entries)) == 0
+
+
+def test_delete_uncommitted_file(
+    file_service, location, example_file_record, identity_simple, db, input_data
+):
+    """Test deleting a file that was uploaded but never committed.
+
+    `set_file_content` creates the object version but only `commit_file` links it to
+    the file record, so a delete arriving in a later request must find it by key.
+    Otherwise it is orphaned in the bucket and later breaks `sync()` on publish.
+    """
+    recid = example_file_record["id"]
+    file_service.init_files(identity_simple, recid, [{"key": "article.txt"}])
+    content = BytesIO(b"test file content")
+    file_service.set_file_content(
+        identity_simple, recid, "article.txt", content, content.getbuffer().nbytes
+    )
+
+    record = RecordWithFiles.pid.resolve(recid)
+    assert record.files["article.txt"].object_version_id is None
+    assert ObjectVersion.get(record.files.bucket, "article.txt") is not None
+
+    file_service.delete_file(identity_simple, recid, "article.txt")
+
+    record = RecordWithFiles.pid.resolve(recid)
+    assert FileRecordMetadata.query.count() == 0
+    assert ObjectVersion.get(record.files.bucket, "article.txt") is None
+
+    # The leftover object version is what publishing chokes on: `sync()` reports it
+    # as an addition and then looks it up in the source file records.
+    dst = RecordWithFiles.create({}, **input_data)
+    dst.files.sync(record.files)
+    dst.commit()
+    db.session.commit()
+
+    assert list(dst.files.keys()) == []

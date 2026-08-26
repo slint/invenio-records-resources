@@ -246,7 +246,9 @@ class FilesManager(MutableMapping):
         """
         rf = self[key]
         cached_ov = self._wip_ov_cache.pop(key, None)
-        ov = rf.object_version or cached_ov
+        # An uncommitted upload is not linked to the file record yet, so look it up
+        # by key - otherwise it is orphaned in the bucket and breaks sync() later.
+        ov = rf.object_version or cached_ov or ObjectVersion.get(self.bucket, key)
 
         # Remove or softdelete the entire row
         rf.delete(force=remove_rf)
